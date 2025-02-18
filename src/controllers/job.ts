@@ -97,6 +97,7 @@ export const uploadJobData = async (req: Request, res: Response): Promise<void> 
     const naukriJobs = JSON.parse(fileData);
 
     if (!Array.isArray(naukriJobs)) {
+      fs.unlinkSync(filePath); // Delete the uploaded file
       res.status(400).json({ message: "Invalid JSON format" });
       return;
     }
@@ -112,6 +113,13 @@ export const uploadJobData = async (req: Request, res: Response): Promise<void> 
     });
 
     await batch.commit();
+
+    // unlink the file
+    fs.unlink(filePath, (err) => {
+      if (err) {
+        console.error("Error deleting file:", err);
+      }
+    });
     res.status(201).json({ message: "Jobs inserted successfully", count: jobs.length });
   } catch (error) {
     console.error("Error uploading JSON file:", error);
