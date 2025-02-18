@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+      "target": "ES2020",                  // Use modern JavaScript features
+      "module": "CommonJS", 
+      "baseUrl": "src",               // Required for Node.js
+      "outDir": "dist",                    // Compiled files go here
+      "rootDir": "src",                     // Source files are in src/
+      "strict": true,                         // Enable strict type checking
+      "esModuleInterop": true,                // Allow ES module imports
+      "skipLibCheck": true,                   // Skip type checks for node_modules
+      "forceConsistentCasingInFileNames": true,
+      "resolveJsonModule": true,              // Allows importing JSON files
+      "moduleResolution": "Node",
+      "noImplicitAny": true,
+      "sourceMap": true             // Use Node-style module resolution
+    },
+    "include": ["src/**/*"],                      // Only compile files in src/
+    "exclude": ["node_modules", "dist"]      // Ignore these folders
+  }
