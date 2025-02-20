@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { Request, RequestHandler, Response } from "express";
 import fs from "fs";
 import path from "path";
 import multer from "multer";
@@ -7,6 +7,7 @@ import { Job } from "../models/job";
 import { collection, doc, writeBatch, setDoc, getDocs, Query, Firestore, query, where, DocumentData } from "firebase/firestore";
 import  { mapNaukriJobToJobPosting }  from "../utils/naukri-job";
 import { JobPosting } from "models/jobPosting";
+// import redisClient from "../config/redis-client"
 // Configure Multer for file uploads
 const storage = multer.diskStorage({
   destination: "./uploads/",
@@ -120,6 +121,10 @@ export const uploadJobData = async (req: Request, res: Response): Promise<void> 
         console.error("Error deleting file:", err);
       }
     });
+     // 🔹 Clear cached job results when new data is uploaded
+     console.log("Flushing Redis cache...");
+    //  await redisClient.flushall(); // `flushall()` in ioredis does not take arguments
+
     res.status(201).json({ message: "Jobs inserted successfully", count: jobs.length });
   } catch (error) {
     console.error("Error uploading JSON file:", error);
@@ -472,11 +477,19 @@ export const getAllJobs = async (req: Request, res: Response): Promise<void> => 
 // };
 
 
-export const getJobs = async (req: Request, res: Response): Promise<void> => {
+export const getJobs: RequestHandler = async (req: Request, res: Response) => {
   try {
     const { category, position, experience, salary, location, jobType } = req.query;
     // console.log("Query params:", req.query.category, position, experience, salary, location, jobType);
-    console.log("query params:" , req.query.salary)
+    // console.log("query params:" , req.query.salary)
+    const cacheKey = `jobs:${JSON.stringify(req.query)}`;
+    /*const cachedJobs = await redisClient.get(cacheKey);
+    if (cachedJobs) {
+      console.log("✅ Serving from cache");
+      res.status(200).json(JSON.parse(cachedJobs));
+      return;
+    }*/
+    console.log("⏳ Fetching from Firestore...");
     let jobsRef = collection(db, "jobs");
     let jobQuery: Query<DocumentData> = jobsRef; // Start with base reference
     let experienceResults: DocumentData[] = []; // To store experience-filtered results
@@ -615,14 +628,18 @@ export const getJobs = async (req: Request, res: Response): Promise<void> => {
     let jobs = snapshot.docs.map((doc) => ({ jobId: doc.id, ...doc.data() }));
 
     // 🔹 Merge experience filter results with other filters (avoiding duplicates)
-    if (experienceResults.length > 0) {
-      const jobIds = new Set(jobs.map((job) => job.jobId)); // Track existing jobs
-      experienceResults.forEach((expJob) => {
-        if (!jobIds.has(expJob.jobId)) {
-          jobs.push(expJob as { jobId: string });
-        }
-      });
-    }
+    // if (experienceResults.length > 0) {
+    //   const jobIds = new Set(jobs.map((job) => job.jobId)); // Track existing jobs
+    //   experienceResults.forEach((expJob) => {
+    //     if (!jobIds.has(expJob.jobId)) {
+    //       jobs.push(expJob as { jobId: string });
+    //     }
+    //   });
+    // }
+    // 🔹 Store jobs in Redis with a TTL (600 seconds = 10 minutes)
+    /*if (jobs.length > 0) {
+      await redisClient.set(cacheKey, JSON.stringify(jobs), "EX", 60);
+    }*/
     console.log("Total jobs:", jobs.length);
     res.status(200).json(jobs);
   } catch (error) {
