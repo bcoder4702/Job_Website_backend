@@ -1,180 +1,7 @@
-import { Job } from "../models/job";
-import { NaukriJobListing } from "../models/naukri";
-
-// function mapNaukriJobToJobModel(naukriJob: NaukriJobListing): Job {
-//     let experienceRequired = 0;
-//     let salaryRangeStart = 0;
-//     let salaryRangeEnd = 0;
-//     let location = "";
-  
-//     naukriJob.placeholders.forEach((placeholder: any) => {
-//       if (placeholder.type === "experience") {
-//         experienceRequired = parseInt(placeholder.label.split(" ")[0]) || 0;
-//       }
-//       if (placeholder.type === "salary") {
-//         const salaryParts = placeholder.label.replace(" Lacs PA", "").split("-");
-//         salaryRangeStart = parseFloat(salaryParts[0]) || 0;
-//         salaryRangeEnd = parseFloat(salaryParts[1]) || 0;
-//       }
-//       if (placeholder.type === "location") {
-//         location = placeholder.label;
-//       }
-//     });
-  
-//     const tags = naukriJob.tagsAndSkills ? naukriJob.tagsAndSkills.split(",") : [];
-//     const jobId = `NAUKRI-${naukriJob.jobId}-${naukriJob.companyName.replace(/\s+/g, "-")}`;
-//     const jobType: "full" | "part" = "full";
-//     const rating = parseFloat(naukriJob.ambitionBoxData?.AggregateRating) || Math.random() * (5 - 3) + 3;
-//     const reviewsCount = naukriJob.ambitionBoxData?.ReviewsCount || Math.floor(Math.random() * 500) + 1;
-  
-//     return new Job(
-//       naukriJob.companyName,
-//       naukriJob.title,
-//       location,
-//       jobType,
-//       experienceRequired,
-//       salaryRangeStart,
-//       salaryRangeEnd,
-//       naukriJob.jobDescription,
-//       "Company description not available",
-//       `https://www.naukri.com${naukriJob.jdURL}`,
-//       jobId,
-//       new Date(),
-//       1,
-//       naukriJob.clientLogo,
-//       tags,
-//     "Hybrid",
-//     rating,
-//     reviewsCount
-//     );
-//   }
-// function sanitizeJobId(companyName: string, jobId: string): string {
-//     return `NAUKRI-${jobId}-${companyName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-")}`;
-//   }
-  
-
-// function mapNaukriJobToJobModel(naukriJob: NaukriJobListing): Job {
-//     let experienceRequired = 0;
-//     let salaryRangeStart = 0;
-//     let salaryRangeEnd = 0;
-//     let location = "";
-  
-//     naukriJob.placeholders.forEach((placeholder: any) => {
-//       if (placeholder.type === "experience") {
-//         experienceRequired = parseInt(placeholder.label.split(" ")[0]) || 0;
-//       }
-//       if (placeholder.type === "salary") {
-//         const salaryParts = placeholder.label.replace(" Lacs PA", "").split("-");
-//         salaryRangeStart = parseFloat(salaryParts[0]) || 0;
-//         salaryRangeEnd = parseFloat(salaryParts[1]) || 0;
-//       }
-//       if (placeholder.type === "location") {
-//         location = placeholder.label;
-//       }
-//     });
-  
-//     const tags = naukriJob.tagsAndSkills ? naukriJob.tagsAndSkills.split(",") : [];
-//     const jobId = sanitizeJobId(naukriJob.companyName, naukriJob.jobId);    
-//     const jobType: "full" | "part" = "full";
-//     const rating = parseFloat(naukriJob.ambitionBoxData?.AggregateRating) || Math.random() * (5 - 3) + 3;
-//     const reviewsCount = naukriJob.ambitionBoxData?.ReviewsCount || Math.floor(Math.random() * 500) + 1;
-  
-//     return new Job(
-//       naukriJob.companyName,
-//       naukriJob.title,
-//       location,
-//       jobType,
-//       experienceRequired,
-//       salaryRangeStart,
-//       salaryRangeEnd,
-//       naukriJob.jobDescription,
-//       "Company description not available",
-//       `https://www.naukri.com${naukriJob.jdURL}`,
-//       jobId,
-//       new Date(),
-//       1,
-//       naukriJob.logoPath,
-//       tags,
-//       "Hybrid",
-//       rating,
-//       reviewsCount
-//     );
-//   }
-  
-
-//   export { mapNaukriJobToJobModel };
-
-
-// import { Timestamp } from "firebase/firestore";
-// import { JobPosting, Category, Position, JobType, ModeOfWork, Source } from "../models/jobPosting";
-
-// function sanitizeJobId(companyName: string, jobId: string): string {
-//   return `NAUKRI-${jobId}-${companyName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-")}`;
-// }
-
-// function mapNaukriJobToJobPosting(naukriJob: any): JobPosting {
-//   let experienceRequired = 0;
-//   let salaryRangeStart = 0;
-//   let salaryRangeEnd = 0;
-//   let location = "";
-//   let workMode: ModeOfWork = ModeOfWork.ONSITE;
-
-//   naukriJob.placeholders.forEach((placeholder: any) => {
-//     if (placeholder.type === "experience") {
-//       experienceRequired = parseInt(placeholder.label.split(" ")[0]) || 0;
-//     }
-//     if (placeholder.type === "salary") {
-//       const salaryParts = placeholder.label.replace(" Lacs PA", "").split("-");
-//       salaryRangeStart = parseFloat(salaryParts[0]) || 0;
-//       salaryRangeEnd = parseFloat(salaryParts[1]) || 0;
-//     }
-//     if (placeholder.type === "location") {
-//       location = placeholder.label;
-//       if (location.toLowerCase().includes("hybrid")) {
-//         workMode = ModeOfWork.HYBRID;
-//       } else if (location.toLowerCase().includes("remote")) {
-//         workMode = ModeOfWork.REMOTE;
-//       }
-//     }
-//   });
-
-//   const tags = naukriJob.tagsAndSkills ? naukriJob.tagsAndSkills.split(",") : [];
-//   const jobId = sanitizeJobId(naukriJob.companyName, naukriJob.jobId);
-//   const jobType: JobType = JobType.FULL_TIME;
-//   const rating = parseFloat(naukriJob.ambitionBoxData?.AggregateRating) || Math.random() * (5 - 3) + 3;
-//   const reviewsCount = naukriJob.ambitionBoxData?.ReviewsCount || Math.floor(Math.random() * 500) + 1;
-
-//   return new JobPosting(
-//     jobId,
-//     {
-//       name: naukriJob.companyName,
-//       description: "Company description not available",
-//       logoPath: naukriJob.logoPath,
-//       rating,
-//       reviewsCount,
-//       applyLink: `https://www.naukri.com${naukriJob.jdURL}`,
-//       postedAt: Timestamp.fromMillis(naukriJob.createdDate),
-//     },
-//     Category.DEVELOPMENT, // You may need a function to determine category dynamically
-//     Position.SD, // You may need a function to determine position dynamically
-//     jobType,
-//     experienceRequired,
-//     salaryRangeStart,
-//     salaryRangeEnd,
-//     naukriJob.jobDescription,
-//     Timestamp.now(),
-//     Source.NAUKRI,
-//     location.split(", "), // Convert to an array of locations
-//     workMode,
-//     tags
-//   );
-// }
-
-// export { mapNaukriJobToJobPosting };
-
-
 import { Timestamp } from "firebase/firestore";
 import { JobPosting, Category, Position, JobType, ModeOfWork, Source } from "../models/jobPosting";
+import { determineCategory } from "./determineCategory";
+import { determinePosition } from "./determinePosition";
 
 function sanitizeJobId(companyName: string, jobId: string): string {
   return `NAUKRI-${jobId}-${companyName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-")}`;
@@ -226,6 +53,8 @@ function mapNaukriJobToJobPosting(naukriJob: any): JobPosting {
   const jobType: JobType = JobType.FULL_TIME;
   const rating = parseFloat(naukriJob.ambitionBoxData?.AggregateRating) || Math.random() * (5 - 3) + 3;
   const reviewsCount = naukriJob.ambitionBoxData?.ReviewsCount || Math.floor(Math.random() * 500) + 1;
+  const category = determineCategory(naukriJob.title);
+  const position = determinePosition(naukriJob.title);
 
   return new JobPosting(
     jobId,
@@ -238,8 +67,8 @@ function mapNaukriJobToJobPosting(naukriJob: any): JobPosting {
       applyLink: `https://www.naukri.com${naukriJob.jdURL}`,
       postedAt: Timestamp.fromMillis(naukriJob.createdDate),
     },
-    Category.DEVELOPMENT, // You may need a function to determine category dynamically
-    Position.SD, // You may need a function to determine position dynamically
+    category, // You may need a function to determine category dynamically
+    position, // You may need a function to determine position dynamically
     jobType,
     experienceMin,
     experienceMax,

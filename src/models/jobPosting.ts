@@ -8,6 +8,7 @@ export enum Category {
   SUPPORT = "Support",
   ENGINEERING = "Engineering",
   SALES = "Sales",
+  OTHER = "Other",
 }
 
 export enum Position {
@@ -95,6 +96,8 @@ export enum Position {
     SOFTWARE_CONSULTANT = "Software Consultant",
     PRODUCT_MANAGER = "Product Manager",
     TECHNICAL_WRITER = "Technical Writer",
+
+    OTHER = "Other",
 }
   
 
