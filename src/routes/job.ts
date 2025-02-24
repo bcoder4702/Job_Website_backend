@@ -6,5 +6,6 @@ const router = express.Router();
 
 router.post("/upload", upload.single("file"), uploadJobData);
 router.get("/alljobs", getJobs); 
+router.get("/aljobs", getAllJobs);
 
 export default router;
