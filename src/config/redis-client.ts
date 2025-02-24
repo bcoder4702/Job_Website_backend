@@ -11,6 +11,14 @@
 
  async function createIndex() {
     try {
+
+        const existingIndexes = await redisClient.call("FT._LIST") as string[];
+    
+        if (existingIndexes.includes("idx:latest_jobs")) {
+          console.log("✅ Index 'idx:latest_jobs' already exists. Skipping creation.");
+          return;
+        }    
+
       await redisClient.call(
         'FT.CREATE',
         'idx:latest_jobs', // Index name
