@@ -4,7 +4,7 @@ import path from "path";
 import multer from "multer";
 import { db } from "../database/firebase";
 import { Job } from "../models/job";
-import { collection, doc, writeBatch, setDoc, getDocs, Query, Firestore, query, where, DocumentData, Timestamp, orderBy, limit } from "firebase/firestore";
+import { collection, doc, writeBatch, setDoc, getDocs, Query, Firestore, query, where, DocumentData, Timestamp, orderBy, limit, QueryDocumentSnapshot, startAfter, getDoc } from "firebase/firestore";
 import  { mapNaukriJobToJobPosting }  from "../utils/naukri-job";
 import { JobPosting } from "../models/jobPosting";
 import redisClient from "../config/redis-client";
@@ -110,51 +110,80 @@ export const getAllJobs: RequestHandler = async (req: Request, res: Response) =>
 
 
 
-async function fetchNewJobsFromFirebase(lastFetchedTimestamp: Timestamp | null): Promise<JobPosting[]> {
-  if (!lastFetchedTimestamp) return [];
-
-  console.log(`⏳ Fetching jobs newer than ${lastFetchedTimestamp.toDate()}`);
-
-  console.log(`⏳ Fetching jobs newer than ${lastFetchedTimestamp.toDate()}`);
-  console.log("lastFetchedTimestamp Type:", typeof lastFetchedTimestamp);
-  console.log("lastFetchedTimestamp Value:", lastFetchedTimestamp);
+async function fetchNewJobsFromFirebase(lastVisibleId: string | null): Promise<{ jobs: JobPosting[], lastDoc: QueryDocumentSnapshot<DocumentData> | null }> {
+  console.log(`⏳ Fetching new jobs from Firestore...`);
 
   const jobsRef = collection(db, "jobs");
-  const adjustedTimestamp = new Timestamp(
-    lastFetchedTimestamp.seconds, 
-    lastFetchedTimestamp.nanoseconds + 1 // 🔥 Ensure we get only newer jobs
+
+  let jobQuery = query(
+    jobsRef,
+    orderBy("createdAt", "desc"), 
+    limit(1000) 
   );
 
-  const jobQuery = query(
-    jobsRef,
-    orderBy("createdAt", "desc"), // ✅ Order by `createdAt` (descending)
-    where("createdAt", ">", adjustedTimestamp), 
-    limit(1000)
-  );
+  if (lastVisibleId) {
+    const lastDocSnapshot = await getDoc(doc(jobsRef, lastVisibleId));
+    if (lastDocSnapshot.exists()) {
+      jobQuery = query(jobQuery, startAfter(lastDocSnapshot));
+      console.log("📍 Fetching jobs **after**:", lastVisibleId);
+    } else {
+      console.warn(`⚠️ Last document ${lastVisibleId} not found in Firestore.`);
+    }
+  }
 
   const snapshot = await getDocs(jobQuery);
-  return snapshot.docs.map((doc) => {
-    const data = doc.data();
 
-    return {
-      jobId: doc.id,
-      ...data,
-      createdAt: data.createdAt instanceof Timestamp 
-        ? data.createdAt // ✅ Use Firestore Timestamp directly
-        : new Timestamp(data.createdAt.seconds, data.createdAt.nanoseconds) // ✅ Handle manual conversion if needed
-    } as JobPosting;
-  });
+  if (snapshot.empty) {
+    console.log("🚫 No more jobs found.");
+    return { jobs: [], lastDoc: null };
+  }
+
+  const newLastDoc = snapshot.docs[snapshot.docs.length - 1];
+
+  const jobs = snapshot.docs.map((doc) => ({
+    jobId: doc.id,
+    ...doc.data(),
+    createdAt: doc.data().createdAt instanceof Timestamp 
+      ? doc.data().createdAt 
+      : new Timestamp(doc.data().createdAt.seconds, doc.data().createdAt.nanoseconds)
+  })) as JobPosting[];
+
+  return { jobs, lastDoc: newLastDoc };
 }
 
 
 
 
-async function fetchJobsFromFirebase(): Promise<JobPosting[]> {
+async function fetchJobsFromFirebase(): Promise<{ jobs: JobPosting[], lastDoc: QueryDocumentSnapshot<DocumentData> | null }> {
+  console.log("⏳ Fetching first 1000 jobs from Firestore...");
+
   const jobsRef = collection(db, "jobs");
   const jobQuery = query(jobsRef, orderBy("createdAt", "desc"), limit(1000));
+
   const snapshot = await getDocs(jobQuery);
-  return snapshot.docs.map((doc) => ({ jobId: doc.id, ...doc.data() } as JobPosting));
+
+  if (snapshot.empty) {
+    console.log("🚫 No jobs found in Firestore.");
+    return { jobs: [], lastDoc: null };
+  }
+
+  // ✅ Get the last document in the snapshot for pagination
+  const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+
+  // ✅ Map Firestore documents to JobPosting objects
+  const jobs = snapshot.docs.map((doc) => ({
+    jobId: doc.id,
+    ...doc.data(),
+    createdAt: doc.data().createdAt instanceof Timestamp 
+      ? doc.data().createdAt 
+      : new Timestamp(doc.data().createdAt.seconds, doc.data().createdAt.nanoseconds)
+  })) as JobPosting[];
+
+  console.log(`✅ Fetched ${jobs.length} jobs. Last visible doc ID: ${lastDoc.id}`);
+
+  return { jobs, lastDoc };
 }
+
 
 
 function parseExperience(exp: string) {
@@ -192,108 +221,75 @@ function parseSalary(salary: string) {
 }
 
 
-
-
-
-
-
 export const getJobs: RequestHandler = async (req: Request, res: Response) => {
   try {
     const { category, position, experience, salary, location, jobType, page = 1 } = req.query;
-    const limit = 60; // Fetch 3 pages worth of jobs (12 jobs per page)
+    const limit = 60;
     const offset = (Number(page) - 1) * limit;
 
     console.log("⏳ Checking Redis for cached jobs...");
     let jobs: JobPosting[] = [];
-    let lastFetchedTimestamp: Date | null = null;
-
+    let lastVisibleId: string | null = null;
 
     // ✅ Try getting jobs from Redis
-    const cachedJobs = await getJobsFromRedis();//redisClient.get("latest_jobs");
-    if (cachedJobs.length!==0) {
-      console.log(`✅ Found ${cachedJobs.length} jobs in Redis cache.`);
-      jobs = cachedJobs;//JSON.parse(cachedJobs as unknown as string);
-      lastFetchedTimestamp = jobs.length > 0 && jobs[jobs.length - 1].createdAt
-  ? new Date(jobs[jobs.length - 1].createdAt.seconds * 1000)
-  : null;
-      console.log("here is the lastfetchedtimestamp",lastFetchedTimestamp);
-      // console.log(`✅ Found ${jobs.length} jobs in Redis cache.`);
-    } else {
-      console.log("🚀 Fetching first 1000 jobs from Firestore...");
-      jobs = await fetchJobsFromFirebase();
-      // console.log(jobs);
-      if (jobs.length > 0) {
-        lastFetchedTimestamp = new Date(jobs[jobs.length - 1].createdAt.seconds * 1000);
-        console.log("here is the lastfetchedtimestamp",lastFetchedTimestamp);
-        // await redisClient.set("latest_jobs", JSON.stringify(jobs), "EX", 14400); // Store for 4 hours
-        const jobPostings = jobs.map(job => new JobPosting(
-          job.jobId,
-          job.company,
-          job.category,
-          job.position,
-          job.jobType,
-          job.experienceMin,
-          job.experienceMax,
-          job.salaryRangeStart,
-          job.salaryRangeEnd,
-          job.jobDescription,
-          job.createdAt,
-          job.source,
-          job.locations,
-          job.modesOfWork,
-          job.tags
-        ));
-        await storeJobsInRedis(jobPostings);
-        
-      }
+    const redisData = await getJobsFromRedis();
+
+    if(redisData.jobs.length!==0){
+      jobs = redisData.jobs;
+      lastVisibleId = redisData.lastVisibleId;
+      console.log(`✅ Found ${jobs.length} jobs in Redis cache.`);
     }
-    // ✅ Ensure jobs are available
+    else{
+        const { jobs: fetchedJobs, lastDoc } = await fetchJobsFromFirebase();
+        jobs = fetchedJobs;
+        lastVisibleId = lastDoc?.id || null;
+        if (jobs.length > 0) {
+          console.log("📍 Storing lastVisibleId:", lastVisibleId);
+          const jobPostings = jobs.map(job => new JobPosting(
+            job.jobId,
+            job.company,
+            job.category,
+            job.position,
+            job.jobType,
+            job.experienceMin,
+            job.experienceMax,
+            job.salaryRangeStart,
+            job.salaryRangeEnd,
+            job.jobDescription,
+            job.createdAt,
+            job.source,
+            job.locations,
+            job.modesOfWork,
+            job.tags
+          ));
+          await storeJobsInRedis(jobPostings, lastDoc);
+    }
+  }
+
     if (jobs.length === 0) {
-      console.log("⚠️ No jobs found in Firestore. Returning empty list.");
+      console.log("⚠️ No jobs found. Returning empty list.");
       res.status(200).json({ jobs: [], totalAvailable: 0, hasMore: false });
       return;
     }
 
-    // ✅ Apply Filters on Cached Data (use lastFetchedTimestamp)
-    let filteredJobs = await applyFilters(
-      { category, position, experience, salary, location, jobType },
-      "latest_jobs"
-      // lastFetchedTimestamp
-    );
+    let filteredJobs = await applyFilters({ category, position, experience, salary, location, jobType }, "latest_jobs");
     console.log(`🔍 Jobs after filtering (from Redis): ${filteredJobs.length}`);
 
-
-    // ✅ Handle pagination & additional fetching logic
-    let fetchCount = 0; // Prevent infinite loops
-
-    while (filteredJobs.length < offset + limit) {
-      if (fetchCount >= 5) {
-        console.log("⚠️ Max fetch attempts reached. Stopping additional fetches.");
-        break;
-      }
-
+    let fetchCount = 0;
+    while (filteredJobs.length < offset + limit && fetchCount < 5) {
 
       console.log(`⚠️ Fetching more jobs from Firestore (current: ${filteredJobs.length})...`);
-      if (!lastFetchedTimestamp || isNaN(new Date(lastFetchedTimestamp).getTime())) {
-        console.log("🚫 Invalid lastFetchedTimestamp. Skipping additional fetch.");
-        break;
-      } 
-      const timestamp = lastFetchedTimestamp 
-      ? (lastFetchedTimestamp instanceof Timestamp 
-           ? lastFetchedTimestamp
-           : Timestamp.fromDate(lastFetchedTimestamp))
-      : null;
-      const newJobs = await fetchNewJobsFromFirebase(timestamp);
+
+      const { jobs: newJobs, lastDoc } = await fetchNewJobsFromFirebase(lastVisibleId);
       console.log(`✅ Fetched ${newJobs.length} new jobs from Firestore.`);
+
       if (newJobs.length === 0) {
         console.log("🚫 No more new jobs available. Stopping fetch.");
         break;
       }
-      lastFetchedTimestamp = new Date(newJobs[newJobs.length - 1].createdAt.seconds * 1000);
 
-      jobs = [...jobs, ...newJobs].filter(
-        (job, index, self) => index === self.findIndex((j) => j.jobId === job.jobId)
-      );
+      lastVisibleId = lastDoc?.id || null;
+      jobs = [...jobs, ...newJobs].filter((job, index, self) => index === self.findIndex((j) => j.jobId === job.jobId));
       const newjobPostings = newJobs.map(job => new JobPosting(
         job.jobId,
         job.company,
@@ -311,30 +307,18 @@ export const getJobs: RequestHandler = async (req: Request, res: Response) => {
         job.modesOfWork,
         job.tags
       ));
-      await storeJobsInRedis(newjobPostings);
-      
+      await storeJobsInRedis(newjobPostings, lastDoc);
 
-      const newFilteredJobs = await applyFilters(
-        { category, position, experience, salary, location, jobType },
-        "latest_jobs"
-        
-      );
-
-      console.log(`🔍 Jobs after filtering sahjfb: ${newFilteredJobs.length}`);
-      filteredJobs = newFilteredJobs;
-
+      filteredJobs = await applyFilters({ category, position, experience, salary, location, jobType }, "latest_jobs");
       console.log(`✅ Total jobs after adding fresh data: ${filteredJobs.length}`);
+
       fetchCount++;
     }
 
-    // ✅ Return paginated response
-    const paginatedJobs = filteredJobs.slice(offset, offset + limit);
-
-    res.status(200).json({
-      jobs: paginatedJobs,
-      totalAvailable: filteredJobs.length,
-      hasMore: filteredJobs.length > offset + limit,
-    });
+    const paginatedJobs = filteredJobs.slice(0, offset + limit);
+    res.status(200).json(
+      paginatedJobs
+  );
   } catch (error) {
     console.error("❌ Error fetching jobs:", error);
     res.status(500).json({ message: "Internal Server Error", error });
@@ -342,25 +326,29 @@ export const getJobs: RequestHandler = async (req: Request, res: Response) => {
 };
 
 
-async function getJobsFromRedis(): Promise<JobPosting[]> {
+async function getJobsFromRedis(): Promise<{ jobs: JobPosting[], lastVisibleId: string | null }> {
   const keys = await redisClient.keys("latest_jobs:*");
   console.log(`🔍 Found ${keys.length} keys in Redis matching prefix 'latest_jobs:'`);
 
   const jobs: JobPosting[] = [];
 
   for (const key of keys) {
+    if (key === "latest_jobs:lastVisible") continue; // ✅ Skip `lastVisible` key
+
     const jobData = await redisClient.call("JSON.GET", key, "$");
+    // console.log(`📌 Redis Key: ${key}, Retrieved Data:`, jobData); // 🔍 Debugging
     if (jobData) {
       try {
         const parsedArray = JSON.parse(jobData as string);
-        const parsedJob = Array.isArray(parsedArray) ? parsedArray[0] : parsedArray; // ✅ Extract first element if array
+        const parsedJob = Array.isArray(parsedArray) ? parsedArray[0] : parsedArray;
         if (!parsedJob || !parsedJob.createdAt) {
           console.error(`❌ Missing createdAt in Redis data for key: ${key}`);
           continue;
         }
+
         jobs.push({
           ...parsedJob,
-          createdAt: new Timestamp(parsedJob.createdAt.seconds, parsedJob.createdAt.nanoseconds), // ✅ Convert back to Firestore Timestamp
+          createdAt: new Timestamp(parsedJob.createdAt.seconds, parsedJob.createdAt.nanoseconds),
         });
       } catch (error) {
         console.error(`❌ Error parsing job data from Redis (key: ${key}):`, error);
@@ -368,10 +356,14 @@ async function getJobsFromRedis(): Promise<JobPosting[]> {
     }
   }
 
-  return jobs;
+  // ✅ Get `lastVisible` ID as a string, NOT JSON
+  const lastVisibleId = await redisClient.get("latest_jobs:lastVisible");
+
+  return { jobs, lastVisibleId };
 }
 
-async function storeJobsInRedis(jobs: JobPosting[]) {
+
+async function storeJobsInRedis(jobs: JobPosting[], lastVisible: QueryDocumentSnapshot<DocumentData> | null) {
   for (const job of jobs) {
     if (!job || !job.jobId) {
       console.error("❌ Invalid job data. Skipping storage in Redis.");
@@ -379,35 +371,28 @@ async function storeJobsInRedis(jobs: JobPosting[]) {
     }
 
     try {
-      // Convert nested timestamp fields to numeric values
       const jobData = {
         ...job.toPlainObject(),
-        company: {
-          ...job.company,
-          postedAtSeconds: job.company.postedAt.seconds,
-          postedAtNanoseconds: job.company.postedAt.nanoseconds,
-        },
         createdAt: {
-          seconds: job.createdAt.seconds, 
+          seconds: job.createdAt.seconds,
           nanoseconds: job.createdAt.nanoseconds,
         },
       };
 
-      // Remove HTML from jobDescription
-      if (jobData.company.description) {
-        jobData.company.description = jobData.company.description.replace(/<[^>]+>/g, "");
-      }
-
-      const jobDataString = JSON.stringify(jobData);
-      // console.log(`✅ Storing job in Redis (jobId: ${job.jobId}):`, jobDataString);
-      // await redisClient.set(`latest_jobs:${job.jobId}`, jobDataString, "EX", 14400);
       await redisClient.call("JSON.SET", `latest_jobs:${job.jobId}`, "$", JSON.stringify(jobData));
     } catch (error) {
       console.error(`❌ Error storing job in Redis (jobId: ${job.jobId}):`, error);
     }
   }
-  console.log("✅ Jobs stored in Redis with the correct prefix.");
+
+  // ✅ Store `lastVisible` as a string, NOT JSON
+  if (lastVisible) {
+    await redisClient.set("latest_jobs:lastVisible", lastVisible.id, "EX", 14400);
+  }
+
+  console.log("✅ Jobs and lastVisible stored in Redis.");
 }
+
 
 
 async function applyFilters(filters: any, redisKey: string): Promise<JobPosting[]> {
