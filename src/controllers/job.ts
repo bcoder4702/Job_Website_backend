@@ -412,23 +412,27 @@ async function applyFilters(filters: any, redisKey: string): Promise<JobPosting[
   if (filters.experience) {
     const parsedExp = parseExperience(filters.experience as string);
     if (parsedExp) {
-      conditions.push(`@experienceMin:[0 ${parsedExp.max}]`);
-      conditions.push(`@experienceMax:[${parsedExp.min} 50]`);
+      // conditions.push(`@experienceMax:[${parsedExp.min} 50]`);
+      // conditions.push(`@experienceMin:[0 ${parsedExp.max}]`);
+      conditions.push(`@experienceMin:[${parsedExp.min} +inf]`);
+
+      // Ensure experienceMax is at most parsedExp.max
+      conditions.push(`@experienceMax:[-inf ${parsedExp.max}]`);
     }
   }
 
   if (filters.salary) {
     const parsedSalary = parseSalary(filters.salary as string);
     if (parsedSalary) {
-      conditions.push(`@salaryRangeStart:[0 ${parsedSalary.max}]`);
-      conditions.push(`@salaryRangeEnd:[${parsedSalary.min} +inf]`);
+      conditions.push(`@salaryRangeStart:[${parsedSalary.min} +inf]`);
+      conditions.push(`@salaryRangeEnd:[-inf ${parsedSalary.max}]`);
     }
   }
 
   if (filters.location) {
-    const locationArray = (filters.location as string).split(",");
-    const locationQuery = locationArray.map(loc => `"${loc}"`).join("|");
-    conditions.push(`@locations:(${locationQuery})`);
+    const locationArray = (filters.location as string).split(","); // Split locations by comma
+    const locationQuery = locationArray.map(loc => `${loc}`).join("|");
+    conditions.push(`@locations:{${locationQuery}}`);
   }
 
   if (filters.jobType) {

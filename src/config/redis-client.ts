@@ -45,9 +45,9 @@
         '$.createdAt.seconds', 'AS', 'createdAtSeconds', 'NUMERIC',
         '$.createdAt.nanoseconds', 'AS', 'createdAtNanoseconds', 'NUMERIC',
         '$.source', 'AS', 'source', 'TAG',
-        '$.locations[*]', 'AS', 'locations', 'TAG',  // ✅ Fix: Array indexing
+        '$.locations', 'AS', 'locations', 'TAG',  // ✅ Fix: Array indexing
         '$.modesOfWork', 'AS', 'modesOfWork', 'TAG',
-        '$.tags[*]', 'AS', 'tags', 'TAG'  // ✅ Fix: Array indexing
+        '$.tags', 'AS', 'tags', 'TAG'  // ✅ Fix: Array indexing
       );
       console.log('✅ Index created successfully');
     } catch (error) {
