@@ -3,19 +3,19 @@
 
  dotenv.config();
 
- /*const redisClient = new Redis({
+ const redisClient = new Redis({
    host: process.env.REDIS_HOST, // If running Redis in Docker locally
    port: 15112, // Default Redis port
    username: process.env.REDIS_USERNAME, // Redis Cloud uses "default" as the username
    password: process.env.REDIS_PASSWORD, // Replace with your actual password
    retryStrategy: (times) => Math.min(times * 50, 2000), // Reconnect strategy
- });*/
+ });
 
- const redisClient = new Redis({
+ /*const redisClient = new Redis({
   host: "localhost", // If running Redis in Docker locally
   port: 6379, // Default Redis port
   retryStrategy: (times) => Math.min(times * 50, 2000), // Reconnect strategy
-});
+});*/
 
  async function createIndex() {
     try {

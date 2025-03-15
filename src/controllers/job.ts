@@ -6,7 +6,7 @@ import { db } from "../database/firebase";
 import { collection, doc, writeBatch, getDocs, query, Timestamp, orderBy, limit } from "firebase/firestore";
 import  { mapNaukriJobToJobPosting }  from "../utils/naukri-job";
 import { JobPosting } from "../models/jobPosting";
-import { applyFilters, getJobsFromRedis, storeJobsInRedis } from "../services/redis-queries";
+import { applyFilters, checkRedis, getJobsFromRedis, storeJobsInRedis } from "../services/redis-queries";
 import { fetchJobsFromFirebase, fetchNewJobsFromFirebase } from "../services/firebase-queries";
 import { mapLinkedInJobToJobPosting } from "../utils/linkedin-job";
 
@@ -23,7 +23,7 @@ export const upload = multer({ storage });
  * Upload a JSON file containing job postings to Firebase Firestore
  */
 
-export const uploadJobData = async (req: Request, res: Response): Promise<void> => {
+/*export const uploadJobData = async (req: Request, res: Response): Promise<void> => {
   const { source } = req.query;
   try {
     if (!req.file) {
@@ -63,7 +63,7 @@ export const uploadJobData = async (req: Request, res: Response): Promise<void> 
     const batch = writeBatch(db);
     jobs.forEach((job) => {
       const jobRef = doc(collection(db, "jobs"), job.jobId);
-      batch.set(jobRef, job.toPlainObject()); // Convert Job instance to plain object
+      batch.set(jobRef, job); 
     });
 
     await batch.commit();
@@ -83,7 +83,117 @@ export const uploadJobData = async (req: Request, res: Response): Promise<void> 
     console.error("Error uploading JSON file:", error);
     res.status(500).json({ message: "Internal Server Error", error });
   }
+};*/
+
+/*export const uploadJobData = async (req: Request, res: Response): Promise<void> => {
+  const { source } = req.query;
+  let filePath: string | null = null; // Track file path
+  try {
+    if (!req.file) {
+      res.status(400).json({ message: "No file uploaded" });
+      return;
+    }
+
+    filePath = req.file.path;
+    const fileData = fs.readFileSync(filePath, "utf8");
+    const cleanedFileData = fileData.replace(/[\u0000-\u001F\u007F-\u009F]/g, ""); // Removes bad control chars
+    const jobData = JSON.parse(cleanedFileData);
+
+    if (!Array.isArray(jobData)) {
+      fs.unlinkSync(filePath); // Delete the uploaded file
+      res.status(400).json({ message: "Invalid JSON format" });
+      return;
+    }
+
+    let jobs: JobPosting[] = [];
+    if (source === "naukri") {
+      jobs = jobData.map((job: any) => mapNaukriJobToJobPosting(job));
+    } else if (source === "linkedin") {
+      jobs = jobData.map((job: any) => mapLinkedInJobToJobPosting(job));
+    } else {
+      fs.unlinkSync(filePath);
+      res.status(400).json({ message: "Invalid source provided" });
+      return;
+    }
+
+    // Insert jobs into Firebase
+    const batch = writeBatch(db);
+    jobs.forEach((job) => {
+      const jobRef = doc(collection(db, "jobs"), job.jobId);
+      batch.set(jobRef, JSON.parse(JSON.stringify(job))); // ✅ Convert class instance to plain object
+    });
+
+    await batch.commit();
+
+    // unlink the file
+    fs.unlink(filePath, (err) => {
+      if (err) {
+        console.error("Error deleting file:", err);
+      }
+    });
+
+    res.status(201).json({ message: "Jobs inserted successfully", count: jobs.length });
+  } catch (error) {
+    console.error("Error uploading JSON file:", error);
+    res.status(500).json({ message: "Internal Server Error", error });
+  }
+};*/
+
+export const uploadJobData = async (req: Request, res: Response): Promise<void> => {
+  const { source } = req.query;
+  let filePath: string | null = null; // Track file path
+
+  try {
+    if (!req.file) {
+      res.status(400).json({ message: "No file uploaded" });
+      return;
+    }
+
+    filePath = req.file.path; // Store the file path
+    const fileData = fs.readFileSync(filePath, "utf8");
+    const cleanedFileData = fileData.replace(/[\u0000-\u001F\u007F-\u009F]/g, ""); // Removes bad control chars
+    const jobData = JSON.parse(cleanedFileData);
+
+    if (!Array.isArray(jobData)) {
+      res.status(400).json({ message: "Invalid JSON format" });
+      return;
+    }
+
+    let jobs: JobPosting[] = [];
+    if (source === "naukri") {
+      jobs = jobData.map((job: any) => mapNaukriJobToJobPosting(job));
+    } else if (source === "linkedin") {
+      jobs = jobData.map((job: any) => mapLinkedInJobToJobPosting(job));
+    } else {
+      res.status(400).json({ message: "Invalid source provided" });
+      return;
+    }
+
+    // Insert jobs into Firebase
+    const batch = writeBatch(db);
+    jobs.forEach((job) => {
+      const jobRef = doc(collection(db, "jobs"), job.jobId);
+      batch.set(jobRef, JSON.parse(JSON.stringify(job))); // Convert class instance to plain object
+    });
+
+    await batch.commit();
+
+    res.status(201).json({ message: "Jobs inserted successfully", count: jobs.length });
+  } catch (error) {
+    console.error("Error uploading JSON file:", error);
+    res.status(500).json({ message: "Internal Server Error", error });
+  } finally {
+    // ✅ Always delete the file, even if an error occurs
+    if (filePath) {
+      fs.unlink(filePath, (err) => {
+        if (err) console.error("Error deleting file:", err);
+        else console.log("✅ Uploaded file deleted successfully");
+      });
+    }
+  }
 };
+
+
 
 /**
  * This function is for only testing purposes
@@ -140,51 +250,24 @@ export const getJobs: RequestHandler = async (req: Request, res: Response) => {
     const offset = (Number(page) - 1) * limit;
 
     console.log("⏳ Checking Redis for cached jobs...");
-    let jobs: JobPosting[] = [];
     let lastVisibleId: string | null = null;
 
-    // ✅ Try getting jobs from Redis
-    const redisData = await getJobsFromRedis();
+    const job_present = await checkRedis();
 
-    if(redisData.jobs.length!==0){
-      jobs = redisData.jobs;
-      lastVisibleId = redisData.lastVisibleId;
-      console.log(`✅ Found ${jobs.length} jobs in Redis cache.`);
+    if(job_present){
+      console.log("✅ Found jobs in Redis cache.");
     }
     else{
         const { jobs: fetchedJobs, lastDoc } = await fetchJobsFromFirebase();
-        jobs = fetchedJobs;
-        lastVisibleId = lastDoc?.id || null;
-        if (jobs.length > 0) {
+        // jobs = fetchedJobs;
+         lastVisibleId = lastDoc?.id || null;
+        if (fetchedJobs.length > 0) {
           console.log("📍 Storing lastVisibleId:", lastVisibleId);
-          const jobPostings = jobs.map(job => new JobPosting(
-            job.jobId,
-            job.company,
-            job.category,
-            job.position,
-            job.jobType,
-            job.experienceMin,
-            job.experienceMax,
-            job.salaryRangeStart,
-            job.salaryRangeEnd,
-            job.jobDescription,
-            job.createdAt,
-            job.source,
-            job.locations,
-            job.modesOfWork,
-            job.tags
-          ));
-          await storeJobsInRedis(jobPostings, lastDoc);
+          await storeJobsInRedis(fetchedJobs, lastDoc);
     }
   }
 
-    if (jobs.length === 0) {
-      console.log("⚠️ No jobs found. Returning empty list.");
-      res.status(200).json({ jobs: [], totalAvailable: 0, hasMore: false });
-      return;
-    }
-
-    let filteredJobs = await applyFilters({ timeRange, category, position, experience, salary, location, jobType }, "latest_jobs");
+    let filteredJobs = await applyFilters({ timeRange, category, position, experience, salary, location, jobType }, "latest_jobs",limit+offset);
     console.log(`🔍 Jobs after filtering (from Redis): ${filteredJobs.length}`);
 
     let fetchCount = 0;
@@ -201,33 +284,15 @@ export const getJobs: RequestHandler = async (req: Request, res: Response) => {
       }
 
       lastVisibleId = lastDoc?.id || null;
-      jobs = [...jobs, ...newJobs].filter((job, index, self) => index === self.findIndex((j) => j.jobId === job.jobId));
-      const newjobPostings = newJobs.map(job => new JobPosting(
-        job.jobId,
-        job.company,
-        job.category,
-        job.position,
-        job.jobType,
-        job.experienceMin,
-        job.experienceMax,
-        job.salaryRangeStart,
-        job.salaryRangeEnd,
-        job.jobDescription,
-        job.createdAt,
-        job.source,
-        job.locations,
-        job.modesOfWork,
-        job.tags
-      ));
-      await storeJobsInRedis(newjobPostings, lastDoc);
+      await storeJobsInRedis(newJobs, lastDoc);
 
-      filteredJobs = await applyFilters({ timeRange, category, position, experience, salary, location, jobType }, "latest_jobs");
+      filteredJobs = await applyFilters({ timeRange, category, position, experience, salary, location, jobType }, "latest_jobs",limit+offset);
       console.log(`✅ Total jobs after adding fresh data: ${filteredJobs.length}`);
 
       fetchCount++;
     }
 
-    const paginatedJobs = filteredJobs.slice(0, offset + limit);
+    const paginatedJobs = filteredJobs;
     res.status(200).json(
       paginatedJobs
   );
@@ -236,28 +301,3 @@ export const getJobs: RequestHandler = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Internal Server Error", error });
   }
 };
-
-
-
-/*export const getJobs: RequestHandler = async (req: Request, res: Response) => {
-    const { timeRange, category, position, experience, salary, location, jobType, page = 1 } = req.query;
-    const limit = 60;
-    const offset = (Number(page) - 1) * limit;
-    const job_counter  = limit+offset;
-    let jobs: JobPosting[] = [];
-
-    try{
-
-      while(job_counter > 0){
-        let filteredJobs = await applyFilters({ timeRange, category, position, experience, salary, location, jobType }, "latest_jobs");
-
-        if(filteredJobs.length ==0 ){
-           let firebaseJobs = await fetchNewJobsFromFirebase(null);
-        }
-      }
-
-    } catch (error) {
-        console.error("❌ Error fetching jobs:", error);
-        res.status(500).json({ message: "Internal Server Error", error });
-    }
-}*/

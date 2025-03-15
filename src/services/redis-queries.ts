@@ -52,7 +52,7 @@ export const getJobsFromRedis = async(): Promise<{ jobs: JobPosting[], lastVisib
   
       try {
         const jobData = {
-          ...job.toPlainObject(),
+          ...job,
           createdAt: {
             seconds: job.createdAt.seconds,
             nanoseconds: job.createdAt.nanoseconds,
@@ -75,7 +75,7 @@ export const getJobsFromRedis = async(): Promise<{ jobs: JobPosting[], lastVisib
   
   
   
-  export const applyFilters = async(filters: any, redisKey: string): Promise<JobPosting[]>  => {
+  export const applyFilters = async(filters: any, redisKey: string, required_limit: number): Promise<JobPosting[]>  => {
     let query = "*"; // Default query (fetch all)
     let conditions: string[] = [];
   
@@ -156,7 +156,7 @@ export const getJobsFromRedis = async(): Promise<{ jobs: JobPosting[], lastVisib
         "FT.SEARCH",
         "idx:latest_jobs",
         query || "*",
-        "LIMIT", "0", "1000",
+        "LIMIT", "0", required_limit.toString(),
       );
   
       // console.log("Redis Search Result:", result); // Debugging

@@ -122,7 +122,7 @@ export enum Source {
   GLASSDOOR = "Glassdoor",
 }
 
-export class JobPosting {
+/*export class JobPosting {
   constructor(
     public jobId: string,
     public company: {
@@ -168,5 +168,74 @@ export class JobPosting {
       modesOfWork: this.modesOfWork,
       tags: this.tags,
     };
+  }
+}
+*/
+
+export class JobPosting {
+  jobId: string;
+  company: {
+    name: string;
+    description?: string;
+    logoPath?: string;
+    rating?: number;
+    reviewsCount?: number;
+    applyLink: string;
+    postedAt: Timestamp;
+  };
+  category: Category;
+  position: Position;
+  jobType: JobType;
+  experienceMin: number;
+  experienceMax: number;
+  salaryRangeStart: number;
+  salaryRangeEnd: number;
+  jobDescription: string;
+  createdAt: Timestamp;
+  source: Source;
+  locations: string[];
+  modesOfWork: ModeOfWork;
+  tags?: string[];
+
+  constructor(
+    jobId: string,
+    company: {
+      name: string;
+      description?: string;
+      logoPath?: string;
+      rating?: number;
+      reviewsCount?: number;
+      applyLink: string;
+      postedAt: Timestamp;
+    },
+    category: Category,
+    position: Position,
+    jobType: JobType,
+    experienceMin: number,
+    experienceMax: number,
+    salaryRangeStart: number,
+    salaryRangeEnd: number,
+    jobDescription: string,
+    createdAt: Timestamp,
+    source: Source,
+    locations: string[],
+    modesOfWork: ModeOfWork,
+    tags?: string[]
+  ) {
+    this.jobId = jobId;
+    this.company = company;
+    this.category = category;
+    this.position = position;
+    this.jobType = jobType;
+    this.experienceMin = experienceMin;
+    this.experienceMax = experienceMax;
+    this.salaryRangeStart = salaryRangeStart;
+    this.salaryRangeEnd = salaryRangeEnd;
+    this.jobDescription = jobDescription;
+    this.createdAt = createdAt;
+    this.source = source;
+    this.locations = locations;
+    this.modesOfWork = modesOfWork;
+    this.tags = tags;
   }
 }
