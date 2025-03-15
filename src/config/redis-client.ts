@@ -15,7 +15,7 @@
   host: "localhost", // If running Redis in Docker locally
   port: 6379, // Default Redis port
   retryStrategy: (times) => Math.min(times * 50, 2000), // Reconnect strategy
-});*/
+});*/  //hey
 
  async function createIndex() {
     try {
