@@ -3,11 +3,12 @@ import fs from "fs";
 import path from "path";
 import multer from "multer";
 import { db } from "../database/firebase";
-import { Job } from "../models/job";
-import { collection, doc, writeBatch, setDoc, getDocs, Query, Firestore, query, where, DocumentData, Timestamp, orderBy, limit, QueryDocumentSnapshot, startAfter, getDoc } from "firebase/firestore";
+import { collection, doc, writeBatch, getDocs, query, Timestamp, orderBy, limit } from "firebase/firestore";
 import  { mapNaukriJobToJobPosting }  from "../utils/naukri-job";
 import { JobPosting } from "../models/jobPosting";
-import redisClient from "../config/redis-client";
+import { applyFilters, getJobsFromRedis, storeJobsInRedis } from "../services/redis-queries";
+import { fetchJobsFromFirebase, fetchNewJobsFromFirebase } from "../services/firebase-queries";
+import { mapLinkedInJobToJobPosting } from "../utils/linkedin-job";
 
 // Configure Multer for file uploads
 const storage = multer.diskStorage({
@@ -23,6 +24,7 @@ export const upload = multer({ storage });
  */
 
 export const uploadJobData = async (req: Request, res: Response): Promise<void> => {
+  const { source } = req.query;
   try {
     if (!req.file) {
       res.status(400).json({ message: "No file uploaded" });
@@ -31,16 +33,31 @@ export const uploadJobData = async (req: Request, res: Response): Promise<void> 
 
     const filePath = req.file.path;
     const fileData = fs.readFileSync(filePath, "utf8");
-    const naukriJobs = JSON.parse(fileData);
+    // const naukriJobs = JSON.parse(fileData);
+    // const jobData = JSON.parse(fileData);
+    // xlet jobData;
+    const cleanedFileData = fileData.replace(/[\u0000-\u001F\u007F-\u009F]/g, ""); // Removes bad control chars
+    const jobData = JSON.parse(cleanedFileData);
 
-    if (!Array.isArray(naukriJobs)) {
+
+    if (!Array.isArray(jobData)) {
       fs.unlinkSync(filePath); // Delete the uploaded file
       res.status(400).json({ message: "Invalid JSON format" });
       return;
     }
-
+    let jobs: JobPosting[] = [];
     // Transform Naukri job data to Job model
-    const jobs: JobPosting[] = naukriJobs.map((naukriJob: any) => mapNaukriJobToJobPosting(naukriJob));
+    // const jobs: JobPosting[] = naukriJobs.map((naukriJob: any) => mapNaukriJobToJobPosting(naukriJob));
+
+    if (source === "naukri") {
+      jobs = jobData.map((job: any) => mapNaukriJobToJobPosting(job));
+    } else if (source === "linkedin") {
+      jobs = jobData.map((job: any) => mapLinkedInJobToJobPosting(job));
+    } else {
+      fs.unlinkSync(filePath);
+      res.status(400).json({ message: "Invalid source provided" });
+      return;
+    }
 
     // Insert jobs into Firebase
     const batch = writeBatch(db);
@@ -68,7 +85,9 @@ export const uploadJobData = async (req: Request, res: Response): Promise<void> 
   }
 };
 
-
+/**
+ * This function is for only testing purposes
+ */
 
 export const getAllJobs: RequestHandler = async (req: Request, res: Response) => {
   try {
@@ -109,121 +128,14 @@ export const getAllJobs: RequestHandler = async (req: Request, res: Response) =>
 };
 
 
-
-async function fetchNewJobsFromFirebase(lastVisibleId: string | null): Promise<{ jobs: JobPosting[], lastDoc: QueryDocumentSnapshot<DocumentData> | null }> {
-  console.log(`⏳ Fetching new jobs from Firestore...`);
-
-  const jobsRef = collection(db, "jobs");
-
-  let jobQuery = query(
-    jobsRef,
-    orderBy("createdAt", "desc"), 
-    limit(1000) 
-  );
-
-  if (lastVisibleId) {
-    const lastDocSnapshot = await getDoc(doc(jobsRef, lastVisibleId));
-    if (lastDocSnapshot.exists()) {
-      jobQuery = query(jobQuery, startAfter(lastDocSnapshot));
-      console.log("📍 Fetching jobs **after**:", lastVisibleId);
-    } else {
-      console.warn(`⚠️ Last document ${lastVisibleId} not found in Firestore.`);
-    }
-  }
-
-  const snapshot = await getDocs(jobQuery);
-
-  if (snapshot.empty) {
-    console.log("🚫 No more jobs found.");
-    return { jobs: [], lastDoc: null };
-  }
-
-  const newLastDoc = snapshot.docs[snapshot.docs.length - 1];
-
-  const jobs = snapshot.docs.map((doc) => ({
-    jobId: doc.id,
-    ...doc.data(),
-    createdAt: doc.data().createdAt instanceof Timestamp 
-      ? doc.data().createdAt 
-      : new Timestamp(doc.data().createdAt.seconds, doc.data().createdAt.nanoseconds)
-  })) as JobPosting[];
-
-  return { jobs, lastDoc: newLastDoc };
-}
-
-
-
-
-async function fetchJobsFromFirebase(): Promise<{ jobs: JobPosting[], lastDoc: QueryDocumentSnapshot<DocumentData> | null }> {
-  console.log("⏳ Fetching first 1000 jobs from Firestore...");
-
-  const jobsRef = collection(db, "jobs");
-  const jobQuery = query(jobsRef, orderBy("createdAt", "desc"), limit(1000));
-
-  const snapshot = await getDocs(jobQuery);
-
-  if (snapshot.empty) {
-    console.log("🚫 No jobs found in Firestore.");
-    return { jobs: [], lastDoc: null };
-  }
-
-  // ✅ Get the last document in the snapshot for pagination
-  const lastDoc = snapshot.docs[snapshot.docs.length - 1];
-
-  // ✅ Map Firestore documents to JobPosting objects
-  const jobs = snapshot.docs.map((doc) => ({
-    jobId: doc.id,
-    ...doc.data(),
-    createdAt: doc.data().createdAt instanceof Timestamp 
-      ? doc.data().createdAt 
-      : new Timestamp(doc.data().createdAt.seconds, doc.data().createdAt.nanoseconds)
-  })) as JobPosting[];
-
-  console.log(`✅ Fetched ${jobs.length} jobs. Last visible doc ID: ${lastDoc.id}`);
-
-  return { jobs, lastDoc };
-}
-
-
-
-function parseExperience(exp: string) {
-  console.log("Raw Experience Query Param:", exp);
-  let minExp = 0, maxExp = 50;
-
-  if (exp.includes("-")) {
-    const [min, max] = exp.split("-").map((num) => parseInt(num.trim()));
-    console.log("Parsed exp Range:", { min, max });
-    return { min, max };
-  } else if (exp.includes("+")) {
-    const extractedExp = parseInt(exp.split("+")[0].trim());
-    console.log("Parsed exp Range:", { extractedExp, maxExp });
-    return { min: extractedExp, max: 50 };
-  }
-
-  return null;
-}
-
-function parseSalary(salary: string) {
-  console.log("Raw Salary Query Param:", salary);
-  let minSalary = 0, maxSalary = Infinity;
-
-  if (salary.includes("-")) {
-    const [min, max] = salary.split("-").map((num) => parseInt(num.trim()));
-    console.log("Parsed Salary Range:", { min, max });
-    return { min, max };
-  } else if (salary.includes("+")) {
-    const extractedSalary = parseInt(salary.split("+")[0].trim());
-    console.log("Parsed Salary Range:", { extractedSalary, maxSalary });
-    return { min: extractedSalary, max: Infinity };
-  }
-
-  return null;
-}
+/**
+ * Get job postings with optional filters
+ */
 
 
 export const getJobs: RequestHandler = async (req: Request, res: Response) => {
   try {
-    const { category, position, experience, salary, location, jobType, page = 1 } = req.query;
+    const { timeRange, category, position, experience, salary, location, jobType, page = 1 } = req.query;
     const limit = 60;
     const offset = (Number(page) - 1) * limit;
 
@@ -272,7 +184,7 @@ export const getJobs: RequestHandler = async (req: Request, res: Response) => {
       return;
     }
 
-    let filteredJobs = await applyFilters({ category, position, experience, salary, location, jobType }, "latest_jobs");
+    let filteredJobs = await applyFilters({ timeRange, category, position, experience, salary, location, jobType }, "latest_jobs");
     console.log(`🔍 Jobs after filtering (from Redis): ${filteredJobs.length}`);
 
     let fetchCount = 0;
@@ -309,7 +221,7 @@ export const getJobs: RequestHandler = async (req: Request, res: Response) => {
       ));
       await storeJobsInRedis(newjobPostings, lastDoc);
 
-      filteredJobs = await applyFilters({ category, position, experience, salary, location, jobType }, "latest_jobs");
+      filteredJobs = await applyFilters({ timeRange, category, position, experience, salary, location, jobType }, "latest_jobs");
       console.log(`✅ Total jobs after adding fresh data: ${filteredJobs.length}`);
 
       fetchCount++;
@@ -326,153 +238,26 @@ export const getJobs: RequestHandler = async (req: Request, res: Response) => {
 };
 
 
-async function getJobsFromRedis(): Promise<{ jobs: JobPosting[], lastVisibleId: string | null }> {
-  const keys = await redisClient.keys("latest_jobs:*");
-  console.log(`🔍 Found ${keys.length} keys in Redis matching prefix 'latest_jobs:'`);
 
-  const jobs: JobPosting[] = [];
+/*export const getJobs: RequestHandler = async (req: Request, res: Response) => {
+    const { timeRange, category, position, experience, salary, location, jobType, page = 1 } = req.query;
+    const limit = 60;
+    const offset = (Number(page) - 1) * limit;
+    const job_counter  = limit+offset;
+    let jobs: JobPosting[] = [];
 
-  for (const key of keys) {
-    if (key === "latest_jobs:lastVisible") continue; // ✅ Skip `lastVisible` key
+    try{
 
-    const jobData = await redisClient.call("JSON.GET", key, "$");
-    // console.log(`📌 Redis Key: ${key}, Retrieved Data:`, jobData); // 🔍 Debugging
-    if (jobData) {
-      try {
-        const parsedArray = JSON.parse(jobData as string);
-        const parsedJob = Array.isArray(parsedArray) ? parsedArray[0] : parsedArray;
-        if (!parsedJob || !parsedJob.createdAt) {
-          console.error(`❌ Missing createdAt in Redis data for key: ${key}`);
-          continue;
+      while(job_counter > 0){
+        let filteredJobs = await applyFilters({ timeRange, category, position, experience, salary, location, jobType }, "latest_jobs");
+
+        if(filteredJobs.length ==0 ){
+           let firebaseJobs = await fetchNewJobsFromFirebase(null);
         }
-
-        jobs.push({
-          ...parsedJob,
-          createdAt: new Timestamp(parsedJob.createdAt.seconds, parsedJob.createdAt.nanoseconds),
-        });
-      } catch (error) {
-        console.error(`❌ Error parsing job data from Redis (key: ${key}):`, error);
       }
-    }
-  }
 
-  // ✅ Get `lastVisible` ID as a string, NOT JSON
-  const lastVisibleId = await redisClient.get("latest_jobs:lastVisible");
-
-  return { jobs, lastVisibleId };
-}
-
-
-async function storeJobsInRedis(jobs: JobPosting[], lastVisible: QueryDocumentSnapshot<DocumentData> | null) {
-  for (const job of jobs) {
-    if (!job || !job.jobId) {
-      console.error("❌ Invalid job data. Skipping storage in Redis.");
-      continue;
-    }
-
-    try {
-      const jobData = {
-        ...job.toPlainObject(),
-        createdAt: {
-          seconds: job.createdAt.seconds,
-          nanoseconds: job.createdAt.nanoseconds,
-        },
-      };
-
-      await redisClient.call("JSON.SET", `latest_jobs:${job.jobId}`, "$", JSON.stringify(jobData));
     } catch (error) {
-      console.error(`❌ Error storing job in Redis (jobId: ${job.jobId}):`, error);
+        console.error("❌ Error fetching jobs:", error);
+        res.status(500).json({ message: "Internal Server Error", error });
     }
-  }
-
-  // ✅ Store `lastVisible` as a string, NOT JSON
-  if (lastVisible) {
-    await redisClient.set("latest_jobs:lastVisible", lastVisible.id, "EX", 14400);
-  }
-
-  console.log("✅ Jobs and lastVisible stored in Redis.");
-}
-
-
-
-async function applyFilters(filters: any, redisKey: string): Promise<JobPosting[]> {
-  let query = "*"; // Default query (fetch all)
-  let conditions: string[] = [];
-
-  if (filters.category) {
-    conditions.push(`@category:{${filters.category}}`);
-  }
-
-  if (filters.position) {
-    const positionArray = (filters.position as string).split(",");
-    const positionQuery = positionArray.map(pos => `"${pos}"`).join("|");
-    conditions.push(`@position:(${positionQuery})`);
-  }
-
-  if (filters.experience) {
-    const parsedExp = parseExperience(filters.experience as string);
-    if (parsedExp) {
-      // conditions.push(`@experienceMax:[${parsedExp.min} 50]`);
-      // conditions.push(`@experienceMin:[0 ${parsedExp.max}]`);
-      conditions.push(`@experienceMin:[${parsedExp.min} +inf]`);
-
-      // Ensure experienceMax is at most parsedExp.max
-      conditions.push(`@experienceMax:[-inf ${parsedExp.max}]`);
-    }
-  }
-
-  if (filters.salary) {
-    const parsedSalary = parseSalary(filters.salary as string);
-    if (parsedSalary) {
-      conditions.push(`@salaryRangeStart:[${parsedSalary.min} +inf]`);
-      conditions.push(`@salaryRangeEnd:[-inf ${parsedSalary.max}]`);
-    }
-  }
-
-  if (filters.location) {
-    const locationArray = (filters.location as string).split(","); // Split locations by comma
-    const locationQuery = locationArray.map(loc => `${loc}`).join("|");
-    conditions.push(`@locations:{${locationQuery}}`);
-  }
-
-  if (filters.jobType) {
-    const jobTypeArray = (filters.jobType as string).split(",");
-    const jobTypeQuery = jobTypeArray.map(type => `"${type}"`).join("|");
-    conditions.push(`@jobType:(${jobTypeQuery})`);
-  }
-
-  if (conditions.length > 0) {
-    query = conditions.join(" ");
-  }
-
-  console.log(`🔍 Redis Query: ${query}`);
-
-  try {
-    const result = await redisClient.call(
-      "FT.SEARCH",
-      "idx:latest_jobs",
-      query || "*",
-      "LIMIT", "0", "1000",
-    );
-
-    // console.log("Redis Search Result:", result); // Debugging
-
-    const jobs: JobPosting[] = [];
-
-    const searchResult = result as any[];
-    for (let i = 1; i < searchResult.length; i += 2) { // Skip index 0 (total count)
-      try {
-        const jsonData = JSON.parse((result as any[])[i + 1][1]); // Extract JSON string from result
-        jobs.push(jsonData as JobPosting);
-      } catch (error) {
-        console.error("❌ Error parsing Redis job data:", error);
-      }
-    }
-    
-    // console.log("✅ Parsed Jobs from Redis:", jobs);
-    return jobs;
-  } catch (error) {
-    console.error("❌ Redis search error:", error);
-    return [];
-  }
-}
+}*/
