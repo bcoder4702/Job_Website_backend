@@ -94,18 +94,21 @@ export const getJobsFromRedis = async(): Promise<{ jobs: JobPosting[], lastVisib
       if (parsedExp) {
         // conditions.push(`@experienceMax:[${parsedExp.min} 50]`);
         // conditions.push(`@experienceMin:[0 ${parsedExp.max}]`);
-        conditions.push(`@experienceMin:[${parsedExp.min} +inf]`);
+        // conditions.push(`@experienceMax:[-inf ${parsedExp.max}]`);
+        // conditions.push(`@experienceMin:[${parsedExp.min} +inf]`);
+        conditions.push(`@experienceMin:[-inf ${parsedExp.max}] @experienceMax:[${parsedExp.min} +inf]`);
   
         // Ensure experienceMax is at most parsedExp.max
-        conditions.push(`@experienceMax:[-inf ${parsedExp.max}]`);
+        // conditions.push(`@experienceMax:[-inf ${parsedExp.max}]`);
       }
     }
   
     if (filters.salary) {
       const parsedSalary = parseSalary(filters.salary as string);
       if (parsedSalary) {
-        conditions.push(`@salaryRangeStart:[${parsedSalary.min} +inf]`);
-        conditions.push(`@salaryRangeEnd:[-inf ${parsedSalary.max}]`);
+        // conditions.push(`@salaryRangeStart:[${parsedSalary.min} +inf]`);
+        // conditions.push(`@salaryRangeEnd:[-inf ${parsedSalary.max}]`);
+        conditions.push(`@salaryRangeStart:[-inf ${parsedSalary.max}] @salaryRangeEnd:[${parsedSalary.min} +inf]`);
       }
     }
   
