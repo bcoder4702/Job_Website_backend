@@ -88,6 +88,12 @@ export const getJobsFromRedis = async(): Promise<{ jobs: JobPosting[], lastVisib
       const positionQuery = positionArray.map(pos => `"${pos}"`).join("|");
       conditions.push(`@position:(${positionQuery})`);
     }
+      /*if (filters.position) {
+        const positionArray: string[] = Array.isArray(filters.position) ? filters.position : [filters.position];
+        const positionQuery = positionArray.map((pos: string) => `${pos}`).join(" | "); // Use " | " for OR condition
+        conditions.push(`@position:{${positionQuery}}`); // ✅ Use {} instead of ()
+      }*/
+      
   
     if (filters.experience) {
       const parsedExp = parseExperience(filters.experience as string);

@@ -44,7 +44,7 @@
         '$.company.logoPath', 'AS', 'logoPath', 'TEXT',
         '$.category', 'AS', 'category', 'TAG',
         '$.position', 'AS', 'position', 'TEXT',
-        '$.jobType', 'AS', 'jobType', 'TAG',
+        '$.jobType', 'AS', 'jobType', 'TEXT',
         '$.experienceMin', 'AS', 'experienceMin', 'NUMERIC',
         '$.experienceMax', 'AS', 'experienceMax', 'NUMERIC',
         '$.salaryRangeStart', 'AS', 'salaryRangeStart', 'NUMERIC',

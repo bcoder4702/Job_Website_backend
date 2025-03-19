@@ -7,7 +7,7 @@ function sanitizeJobId(companyName: string, jobId: string): string {
   return `NAUKRI-${jobId}-${companyName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-")}`;
 }
 
-function parseExperience(experienceLabel: string): { experienceMin: number; experienceMax: number } {
+/*function parseExperience(experienceLabel: string): { experienceMin: number; experienceMax: number } {
   const match = experienceLabel.match(/(\d+)-?(\d+)?/);
   
   if (match) {
@@ -17,7 +17,19 @@ function parseExperience(experienceLabel: string): { experienceMin: number; expe
   }
   
   return { experienceMin: 0, experienceMax: 0 }; // Default if no experience is found
+}*/
+function parseExperience(experienceLabel: string): { experienceMin: number; experienceMax: number } {
+  const match = experienceLabel.match(/(\d+)-?(\d+)?/);
+
+  if (match) {
+    const experienceMin = parseInt(match[1]); // Extracts the lower range
+    const experienceMax = match[2] ? parseInt(match[2]) : 1000; // ✅ If no upper range, set it to 1000
+    return { experienceMin, experienceMax };
+  }
+
+  return { experienceMin: 0, experienceMax: 1000 }; // Default if no experience is found
 }
+
 
 function mapNaukriJobToJobPosting(naukriJob: any): JobPosting {
   let experienceMin = 0;
