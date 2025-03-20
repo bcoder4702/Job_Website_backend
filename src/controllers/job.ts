@@ -250,22 +250,23 @@ export const getJobs: RequestHandler = async (req: Request, res: Response) => {
     const offset = (Number(page) - 1) * limit;
 
     console.log("⏳ Checking Redis for cached jobs...");
-    let lastVisibleId: string | null = null;
+    // let lastVisibleId: string | null = null;
 
-    const job_present = await checkRedis();
-
-    if(job_present){
-      console.log("✅ Found jobs in Redis cache.");
-    }
-    else{
-        const { jobs: fetchedJobs, lastDoc } = await fetchJobsFromFirebase();
+    // const job_present = await checkRedis();
+    const { jobsPresent, lastVisibleId: redisLastVisibleId } = await checkRedis();
+    let lastVisibleId = redisLastVisibleId;
+    if(!jobsPresent){
+      // console.log("✅ Found jobs in Redis cache.");
+      // lastVisibleId = redisLastVisibleId;
+      // console.log("📍 this lastVisibleId from redis will be passed to firebase:", lastVisibleId);
+      const { jobs: fetchedJobs, lastDoc } = await fetchJobsFromFirebase();
         // jobs = fetchedJobs;
          lastVisibleId = lastDoc?.id || null;
         if (fetchedJobs.length > 0) {
           console.log("📍 Storing lastVisibleId:", lastVisibleId);
           await storeJobsInRedis(fetchedJobs, lastDoc);
     }
-  }
+    }
 
     let filteredJobs = await applyFilters({ timeRange, category, position, experience, salary, location, jobType }, "latest_jobs",limit+offset);
     console.log(`🔍 Jobs after filtering (from Redis): ${filteredJobs.length}`);

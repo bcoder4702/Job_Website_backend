@@ -43,7 +43,7 @@ export const getJobsFromRedis = async(): Promise<{ jobs: JobPosting[], lastVisib
   }
   
   
-  export const storeJobsInRedis = async(jobs: JobPosting[], lastVisible: QueryDocumentSnapshot<DocumentData> | null) => {
+  /*export const storeJobsInRedis = async(jobs: JobPosting[], lastVisible: QueryDocumentSnapshot<DocumentData> | null) => {
     for (const job of jobs) {
       if (!job || !job.jobId) {
         console.error("❌ Invalid job data. Skipping storage in Redis.");
@@ -71,7 +71,47 @@ export const getJobsFromRedis = async(): Promise<{ jobs: JobPosting[], lastVisib
     }
   
     console.log("✅ Jobs and lastVisible stored in Redis.");
-  }
+  }*/
+
+    export const storeJobsInRedis = async (
+      jobs: JobPosting[], 
+      lastVisible: QueryDocumentSnapshot<DocumentData> | null
+    ) => {
+      try {
+        console.time("RedisStoreJobs");
+    
+        const pipeline = redisClient.pipeline();
+    
+        // Batch store jobs
+        jobs.forEach(job => {
+          if (!job?.jobId) {
+            console.error("❌ Invalid job data - skipping");
+            return;
+          }
+    
+          const jobData = {
+            ...job,
+            createdAt: {
+              seconds: job.createdAt.seconds,
+              nanoseconds: job.createdAt.nanoseconds
+            }
+          };
+    
+          pipeline.call("JSON.SET", `latest_jobs:${job.jobId}`, "$", JSON.stringify(jobData));
+        });
+    
+        // Store lastVisible
+        if (lastVisible) {
+          pipeline.set("latest_jobs:lastVisible", lastVisible.id, "EX", 14400);
+        }
+    
+        await pipeline.exec();
+        console.timeEnd("RedisStoreJobs");
+        console.log(`✅ Stored ${jobs.length} jobs in Redis`);
+      } catch (error) {
+        console.error("🔥 Redis store error:", error);
+      }
+    };
   
   
   
@@ -88,32 +128,17 @@ export const getJobsFromRedis = async(): Promise<{ jobs: JobPosting[], lastVisib
       const positionQuery = positionArray.map(pos => `"${pos}"`).join("|");
       conditions.push(`@position:(${positionQuery})`);
     }
-      /*if (filters.position) {
-        const positionArray: string[] = Array.isArray(filters.position) ? filters.position : [filters.position];
-        const positionQuery = positionArray.map((pos: string) => `${pos}`).join(" | "); // Use " | " for OR condition
-        conditions.push(`@position:{${positionQuery}}`); // ✅ Use {} instead of ()
-      }*/
-      
   
     if (filters.experience) {
       const parsedExp = parseExperience(filters.experience as string);
       if (parsedExp) {
-        // conditions.push(`@experienceMax:[${parsedExp.min} 50]`);
-        // conditions.push(`@experienceMin:[0 ${parsedExp.max}]`);
-        // conditions.push(`@experienceMax:[-inf ${parsedExp.max}]`);
-        // conditions.push(`@experienceMin:[${parsedExp.min} +inf]`);
         conditions.push(`@experienceMin:[-inf ${parsedExp.max}] @experienceMax:[${parsedExp.min} +inf]`);
-  
-        // Ensure experienceMax is at most parsedExp.max
-        // conditions.push(`@experienceMax:[-inf ${parsedExp.max}]`);
       }
     }
   
     if (filters.salary) {
       const parsedSalary = parseSalary(filters.salary as string);
       if (parsedSalary) {
-        // conditions.push(`@salaryRangeStart:[${parsedSalary.min} +inf]`);
-        // conditions.push(`@salaryRangeEnd:[-inf ${parsedSalary.max}]`);
         conditions.push(`@salaryRangeStart:[-inf ${parsedSalary.max}] @salaryRangeEnd:[${parsedSalary.min} +inf]`);
       }
     }
@@ -191,9 +216,46 @@ export const getJobsFromRedis = async(): Promise<{ jobs: JobPosting[], lastVisib
   }
 
 
-  export const checkRedis = async(): Promise<boolean> => {
+  /*export const checkRedis = async(): Promise<boolean> => {
     const keys = await redisClient.keys("latest_jobs:*");
     console.log(`🔍 Found ${keys.length} keys in Redis matching prefix 'latest_jobs:'`);
   
     return keys.length > 0;
-  }
+  }*/
+
+    /*export const checkRedis = async (): Promise<{ jobsPresent: boolean; lastVisibleId: string | null }> => {
+      const keys = await redisClient.keys("latest_jobs:*");
+      console.log(`🔍 Found ${keys.length} keys in Redis matching prefix 'latest_jobs:'`);
+    
+      if (keys.length > 0) {
+        // Retrieve the lastVisibleId from Redis
+        const lastVisibleId = await redisClient.get("latest_jobs:lastVisible");
+        return { jobsPresent: true, lastVisibleId };
+      }
+    
+      return { jobsPresent: false, lastVisibleId: null };
+    };*/
+
+
+    export const checkRedis = async (): Promise<{ 
+      jobsPresent: boolean; 
+      lastVisibleId: string | null 
+    }> => {
+      try {
+        console.time("RedisCheck");
+    
+        const [keys, lastVisibleId] = await Promise.all([
+          redisClient.scan(0, "MATCH", "latest_jobs:*", "COUNT", 100),
+          redisClient.get("latest_jobs:lastVisible")
+        ]);
+    
+        console.timeEnd("RedisCheck");
+        return { 
+          jobsPresent: keys[1].length > 0, 
+          lastVisibleId 
+        };
+      } catch (error) {
+        console.error("🔥 Redis check error:", error);
+        return { jobsPresent: false, lastVisibleId: null };
+      }
+    };
