@@ -245,9 +245,10 @@ export const getAllJobs: RequestHandler = async (req: Request, res: Response) =>
 
 export const getJobs: RequestHandler = async (req: Request, res: Response) => {
   try {
-    const { timeRange, category, position, experience, salary, location, jobType, page = 1 } = req.query;
+    const { companyName, timeRange, category, position, experience, salary, location, jobType, page = 1 } = req.query;
     const limit = 60;
     const offset = (Number(page) - 1) * limit;
+    console.log("companyNmae", companyName);
 
     console.log("⏳ Checking Redis for cached jobs...");
     // let lastVisibleId: string | null = null;
@@ -268,7 +269,7 @@ export const getJobs: RequestHandler = async (req: Request, res: Response) => {
     }
     }
 
-    let filteredJobs = await applyFilters({ timeRange, category, position, experience, salary, location, jobType }, "latest_jobs",limit+offset);
+    let filteredJobs = await applyFilters({companyName, timeRange, category, position, experience, salary, location, jobType }, "latest_jobs",limit+offset);
     console.log(`🔍 Jobs after filtering (from Redis): ${filteredJobs.length}`);
 
     let fetchCount = 0;
@@ -287,7 +288,7 @@ export const getJobs: RequestHandler = async (req: Request, res: Response) => {
       lastVisibleId = lastDoc?.id || null;
       await storeJobsInRedis(newJobs, lastDoc);
 
-      filteredJobs = await applyFilters({ timeRange, category, position, experience, salary, location, jobType }, "latest_jobs",limit+offset);
+      filteredJobs = await applyFilters({companyName, timeRange, category, position, experience, salary, location, jobType }, "latest_jobs",limit+offset);
       console.log(`✅ Total jobs after adding fresh data: ${filteredJobs.length}`);
 
       fetchCount++;

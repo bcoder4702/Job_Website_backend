@@ -154,6 +154,11 @@ export const getJobsFromRedis = async(): Promise<{ jobs: JobPosting[], lastVisib
       const jobTypeQuery = jobTypeArray.map(type => `"${type}"`).join("|");
       conditions.push(`@jobType:(${jobTypeQuery})`);
     }
+
+    if (filters.companyName) {
+      const sanitizedCompanyName = filters.companyName.trim().toLowerCase().replace(/"/g, ''); // Sanitize input
+      conditions.push(`@companyName:(${sanitizedCompanyName}*)`); // Partial match with wildcard
+  }
   
     if (filters.timeRange) {
       const currentTimestamp = Math.floor(Date.now() / 1000); // Current time in seconds
