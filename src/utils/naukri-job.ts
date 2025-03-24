@@ -4,7 +4,7 @@ import { determineCategory } from "./determineCategory";
 import { determinePosition } from "./determinePosition";
 
 function sanitizeJobId(companyName: string, jobId: string): string {
-  return `NAUKRI-${jobId}-${companyName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-")}`;
+  return `${jobId}-${companyName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-")}`;
 }
 
 /*function parseExperience(experienceLabel: string): { experienceMin: number; experienceMax: number } {

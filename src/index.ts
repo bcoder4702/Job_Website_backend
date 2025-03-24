@@ -6,12 +6,13 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import router from './routes/index';
 import helmet from 'helmet';
+import limiter from './middlewares/rate-limitter';
 
 const PORT = process.env.PORT || 3000;
 
 const app = express();
 
-
+app.use(limiter);
 app.use(cors());
 app.use(helmet());
 app.use(bodyParser.urlencoded({ extended: false }));
