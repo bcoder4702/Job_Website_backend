@@ -8,6 +8,8 @@ import router from './routes/index';
 import helmet from 'helmet';
 import limiter from './middlewares/rate-limitter';
 
+// default port
+
 const PORT = process.env.PORT || 3000;
 
 const app = express();

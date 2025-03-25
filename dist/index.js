@@ -11,6 +11,7 @@ const cors_1 = __importDefault(require("cors"));
 const index_1 = __importDefault(require("./routes/index"));
 const helmet_1 = __importDefault(require("helmet"));
 const rate_limitter_1 = __importDefault(require("./middlewares/rate-limitter"));
+// default port
 const PORT = process.env.PORT || 3000;
 const app = (0, express_1.default)();
 app.use(rate_limitter_1.default);
